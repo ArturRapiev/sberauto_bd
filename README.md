@@ -50,3 +50,77 @@ os.environ['PROJECT_PATH'] = '/path/to/your/project'
 Убедитесь, что ваш PostgreSQL сервер настроен и доступен для подключения.
 Весь процесс обработки данных является параллельным, используя Dask для эффективной работы с большими объемами данных.
 Этот проект предназначен для работы с большими объемами данных и обеспечивает масштабируемость обработки через Dask, а также автоматизацию с помощью Airflow.
+
+Работа с PostgreSQL:
+
+1. Подключаемся к серверу PostgreSQL от имени суперпользователя (postgres):
+bash
+psql -U postgres
+
+Создаем нового пользователя с паролем:
+sql
+CREATE USER airflow_db WITH PASSWORD 'airflow';
+
+Создаем базу данных для хранения данных Google Analytics:
+sql
+CREATE DATABASE airflow_metadata;
+
+Назначаем созданного пользователя владельцем базы данных:
+sql
+ALTER DATABASE airflow_metadata OWNER TO airflow_db;
+
+Даем пользователю права на выполнение всех операций с базой данных:
+sql
+GRANT ALL PRIVILEGES ON DATABASE airflow_metadata TO airflow_db;
+
+Даем права на схему public, чтобы пользователь мог создавать и изменять таблицы:
+sql
+GRANT ALL ON SCHEMA public TO airflow_db;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO airflow_db;
+
+Теперь пользователь airflow_db имеет доступ к базе данных airflow_metadata и может выполнять операции с таблицами.
+
+2. Создаем таблицы ga_sessions и ga_hits. Добавляем уникальные ограничения для таблиц, чтобы предотвратить загрузку дубликатов.
+
+Таблица ga_sessions:
+sql
+CREATE TABLE IF NOT EXISTS ga_sessions (
+    session_id VARCHAR(255) PRIMARY KEY,                -- ID визита (уникальный)
+    client_id VARCHAR(255) NOT NULL,                    -- ID посетителя
+    visit_date DATE NOT NULL,                           -- Дата визита
+    visit_time TIME NOT NULL,                           -- Время визита
+    visit_number INTEGER NOT NULL,                      -- Порядковый номер визита клиента
+    utm_source VARCHAR(255),                            -- Канал привлечения
+    utm_medium VARCHAR(255),                            -- Тип привлечения
+    utm_campaign VARCHAR(255),                          -- Рекламная кампания
+    utm_keyword VARCHAR(255),                           -- Ключевое слово
+    device_category VARCHAR(255),                       -- Тип устройства
+    device_os VARCHAR(255),                             -- ОС устройства
+    device_brand VARCHAR(255),                          -- Бренд устройства
+    device_model VARCHAR(255),                          -- Модель устройства
+    device_screen_resolution VARCHAR(255),              -- Разрешение экрана
+    device_browser VARCHAR(255),                        -- Браузер
+    geo_country VARCHAR(255),                           -- Страна
+    geo_city VARCHAR(255)                               -- Город                              
+);
+Таблица ga_hits:
+sql
+CREATE TABLE IF NOT EXISTS ga_hits (
+    hit_id SERIAL PRIMARY KEY,                          -- Уникальный идентификатор события
+    session_id VARCHAR(255) REFERENCES ga_sessions(session_id) ON DELETE CASCADE, -- ID визита
+    hit_date DATE NOT NULL,                             -- Дата события
+    hit_time TIME NOT NULL,                             -- Время события
+    hit_number INTEGER NOT NULL,                        -- Порядковый номер события в рамках сессии
+    hit_type VARCHAR(255),                              -- Тип события
+    hit_referer VARCHAR(255),                           -- Источник события
+    hit_page_path TEXT,                                 -- Путь страницы
+    event_category VARCHAR(255),                        -- Категория события
+    event_action VARCHAR(255),                          -- Действие события
+    event_label VARCHAR(255),                           -- Метка действия
+    event_value VARCHAR(255),                           
+    CONSTRAINT unique_hit UNIQUE(session_id, hit_number, hit_type) -- Уникальность события в рамках сессии
+);
+
+Далее, если необходимо, настройте IP и прием подключения в файлах конфигурации postgreSQL:
+"pg_hba.conf" (доступ к базе данных)
+"postgresql.conf" (настройка подключения).
