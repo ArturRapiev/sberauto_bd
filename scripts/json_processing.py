@@ -1,3 +1,5 @@
+### Код для обработки новых данных из json файла и загрузка их в БД.
+
 import logging
 import dask.dataframe as dd
 import pandas as pd

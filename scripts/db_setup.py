@@ -1,10 +1,12 @@
-### Новый файл для настройки базы данных: `db_setup.py`
-
 import psycopg2
 from psycopg2 import sql
 
-# Конфигурация подключения
-DB_URL = "postgresql://airflow_db:airflow@192.168.0.106:5432/airflow_metadata"
+# Константы подключения
+DB_HOST = "192.168.0.106"
+DB_PORT = 5432
+DB_USER = "postgres"  # Это суперпользователь PostgreSQL
+DB_PASSWORD = "postgres"  # Пароль, который вы установили для пользователя postgres
+DB_NAME = "airflow_metadata"
 
 # SQL для создания таблиц
 CREATE_SESSIONS_TABLE = """
@@ -46,17 +48,83 @@ CREATE TABLE IF NOT EXISTS ga_hits (
     CONSTRAINT unique_hit UNIQUE(session_id, hit_number, hit_type)
 );
 """
+def check_table_exists(cursor, table_name):
+    """Функция для проверки, существует ли таблица"""
+    cursor.execute(f"""
+        SELECT EXISTS (
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name = '{table_name}'
+        );
+    """)
+    return cursor.fetchone()[0]
 
+# Подключение как суперпользователь
 def setup_database():
     try:
-        with psycopg2.connect(DB_URL) as conn:
-            with conn.cursor() as cur:
-                # Создаем таблицы
-                cur.execute(CREATE_SESSIONS_TABLE)
-                cur.execute(CREATE_HITS_TABLE)
-                print("Таблицы успешно созданы.")
+        # Подключение как суперпользователь
+        admin_conn = psycopg2.connect(
+            dbname="postgres",
+            user=DB_USER,
+            password=DB_PASSWORD,
+            host=DB_HOST,
+            port=DB_PORT
+        )
+        admin_conn.autocommit = True
+        admin_cursor = admin_conn.cursor()
+
+        # Создание пользователя airflow_db
+        try:
+            admin_cursor.execute("CREATE USER airflow_db WITH PASSWORD 'airflow';")
+            print("Пользователь 'airflow_db' успешно создан.")
+        except psycopg2.errors.DuplicateObject:
+            print("Пользователь 'airflow_db' уже существует.")
+
+        # Создание базы данных
+        try:
+            admin_cursor.execute(f"CREATE DATABASE {DB_NAME} OWNER airflow_db;")
+            print(f"База данных '{DB_NAME}' успешно создана.")
+        except psycopg2.errors.DuplicateDatabase:
+            print(f"База данных '{DB_NAME}' уже существует.")
+
+        admin_cursor.close()
+        admin_conn.close()
+
     except Exception as e:
-        print(f"Ошибка при настройке базы данных: {e}")
+        print(f"Ошибка подключения администратора: {e}")
+        return
+
+# Подключение как пользователь airflow_db
+    try:
+        user_conn = psycopg2.connect(
+            dbname=DB_NAME,
+            user="airflow_db",
+            password="airflow",
+            host=DB_HOST,
+            port=DB_PORT
+        )
+        user_cursor = user_conn.cursor()
+
+        # Проверка и создание таблиц, если их нет
+        if not check_table_exists(user_cursor, "ga_sessions"):
+            user_cursor.execute(CREATE_SESSIONS_TABLE)
+            print("Таблица 'ga_sessions' успешно создана.")
+        else:
+            print("Таблица 'ga_sessions' уже существует.")
+
+        if not check_table_exists(user_cursor, "ga_hits"):
+            user_cursor.execute(CREATE_HITS_TABLE)
+            print("Таблица 'ga_hits' успешно создана.")
+        else:
+            print("Таблица 'ga_hits' уже существует.")
+
+        user_conn.commit()
+        user_cursor.close()
+        user_conn.close()
+
+    except Exception as e:
+        print(f"Ошибка подключения пользователя: {e}")
 
 if __name__ == "__main__":
     setup_database()

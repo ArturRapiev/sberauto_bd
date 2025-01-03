@@ -1,3 +1,5 @@
+### Код загрузки первичных данных для БД из parquet файла.
+
 import logging
 import dask.dataframe as dd
 from sqlalchemy import create_engine, text
@@ -73,7 +75,7 @@ def load_and_process_data(file_path: str, columns_types: dict, date_columns: lis
         df = df.fillna("unknown")
 
         # Заменяем неинформативные значения
-        df = df.replace(["(no set)", "(none)", "Na"], "unknown")
+        df = df.replace(["(no set)", "(none)", "na"], "unknown")
 
         # Приводим столбцы к нужным типам данных
         for col, dtype in columns_types.items():
